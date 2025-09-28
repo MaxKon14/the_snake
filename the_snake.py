@@ -133,8 +133,6 @@ class Snake(GameObject):
 
     def reset(self):
         """Метод сброса змейки"""
-        print(self.positions)
-        print(self.get_head_position())
         for position in self.positions:
             rect = pygame.Rect(position, (GRID_SIZE, GRID_SIZE))
             pygame.draw.rect(screen, BOARD_BACKGROUND_COLOR, rect)
