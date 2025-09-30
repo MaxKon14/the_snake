@@ -218,7 +218,7 @@ def main():
 
     # Инициализация PyGame:
     pg.init()
-    occupied_cells = set(CENTER_OF_SCREEN)  # Список занятых ячеек
+    occupied_cells = set()  # Список занятых ячеек
     snake = Snake()
     occupied_cells.update(snake.positions)
     apple = Apple(occupied_cells)
