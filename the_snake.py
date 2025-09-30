@@ -1,4 +1,4 @@
-from random import randint
+from random import randint, choice
 
 import pygame as pg
 
@@ -16,6 +16,18 @@ UP = (0, -1)
 DOWN = (0, 1)
 LEFT = (-1, 0)
 RIGHT = (1, 0)
+ALL_DIRECTIONS = (UP, DOWN, LEFT, RIGHT)
+
+DIRECTION_CHANGING = {
+    (LEFT, pg.K_UP): UP,
+    (RIGHT, pg.K_UP): UP,
+    (UP, pg.K_LEFT): LEFT,
+    (DOWN, pg.K_LEFT): LEFT,
+    (UP, pg.K_RIGHT): RIGHT,
+    (DOWN, pg.K_RIGHT): RIGHT,
+    (LEFT, pg.K_DOWN): DOWN,
+    (RIGHT, pg.K_DOWN): DOWN
+}
 
 # Цвет фона - черный:
 BOARD_BACKGROUND_COLOR = (0, 0, 0)
@@ -65,8 +77,8 @@ class GameObject:
 
     def draw_cell(self, position=None, color=None):
         """Метод отрисовки ячейки на экране"""
-        color = color if color is not None else self.body_color
-        position = position if position is not None else self.position
+        color = color or self.body_color
+        position = position or self.position
         rect = pg.Rect(position, (GRID_SIZE, GRID_SIZE))
         pg.draw.rect(screen, color, rect)
         pg.draw.rect(screen, BORDER_COLOR, rect, 1)
@@ -91,6 +103,10 @@ class Apple(GameObject):
                 break
         self.position = (x * GRID_SIZE, y * GRID_SIZE)
 
+    def draw(self):
+        """Метод отрисовки яблока"""
+        self.draw_cell(self.position, self.body_color)
+
 
 class Snake(GameObject):
     """Класс змейки"""
@@ -99,7 +115,7 @@ class Snake(GameObject):
                  body_color=SNAKE_COLOR) -> None:
         super().__init__(position, body_color)
         self.reset()
-        self.last = None
+        self.direction = RIGHT
 
     def update_direction(self, direction):
         """Метод обновления направления после нажатия на кнопку"""
@@ -107,14 +123,14 @@ class Snake(GameObject):
 
     def move(self):
         """Метод движения змейки"""
-        [head_position_x, head_position_y] = self.get_head_position()
-        [direction_x, direction_y] = self.direction
+        head_position_x, head_position_y = self.get_head_position()
+        direction_x, direction_y = self.direction
         next_position = ((head_position_x + direction_x * GRID_SIZE)
                          % SCREEN_WIDTH,
                          (head_position_y + direction_y * GRID_SIZE)
                          % SCREEN_HEIGHT)
         self.positions.insert(0, next_position)
-        self.last = self.positions.pop(-1)
+        self.last = self.positions.pop()
 
     def draw(self):
         """Метод отрисовки змейки"""
@@ -132,11 +148,12 @@ class Snake(GameObject):
     def reset(self):
         """Метод сброса змейки"""
         self.positions = [self.position]
-        self.direction = RIGHT
+        self.direction = choice(ALL_DIRECTIONS)
+        self.last = None
 
     def decrease_length(self):
         """Метод уменьшения длины змейки"""
-        position = self.positions.pop(-1)
+        position = self.positions.pop()
         rect = pg.Rect(position, (GRID_SIZE, GRID_SIZE))
         pg.draw.rect(screen, BOARD_BACKGROUND_COLOR, rect)
 
@@ -164,43 +181,54 @@ class Stone(Apple):
 
 def handle_keys(game_object):
     """Функция обработки действий пользователя"""
-    Directions = {
-        (LEFT, pg.K_UP): UP,
-        (RIGHT, pg.K_UP): UP,
-        (UP, pg.K_LEFT): LEFT,
-        (DOWN, pg.K_LEFT): LEFT,
-        (UP, pg.K_RIGHT): RIGHT,
-        (DOWN, pg.K_RIGHT): RIGHT,
-        (LEFT, pg.K_DOWN): DOWN,
-        (RIGHT, pg.K_DOWN): DOWN
-    }
     for event in pg.event.get():
         if event.type == pg.QUIT:
             pg.quit()
             raise SystemExit
         elif event.type == pg.KEYDOWN:
-            direction = Directions.get((game_object.direction, event.key),
-                                       game_object.direction)
+            direction = DIRECTION_CHANGING.get((
+                game_object.direction, event.key), game_object.direction)
             game_object.update_direction(direction)
             if event.key == pg.K_ESCAPE:
                 pg.quit()
                 raise SystemExit
+            break
 
 
 def main():
     """Основная функция"""
+    def reset_game():
+        """Сброс игры: перезапуск змейки и объектов"""
+        snake.reset()
+        occupied_cells.clear()
+        occupied_cells.update(snake.positions)
+
+        # Перемещение яблока
+        apple.randomize_position(occupied_cells)
+        occupied_cells.add(apple.position)
+
+        # Перемещение ложной еды
+        fake_food.randomize_position(occupied_cells)
+        occupied_cells.add(fake_food.position)
+
+        # Перемещение камней
+        for stone in stones:
+            stone.randomize_position(occupied_cells)
+            occupied_cells.add(stone.position)
+
     # Инициализация PyGame:
     pg.init()
-    occupied_cells = list(CENTER_OF_SCREEN)  # Список занятых ячеек
-    apple = Apple(occupied_cells)
-    occupied_cells.append(apple.position)
+    occupied_cells = set(CENTER_OF_SCREEN)  # Список занятых ячеек
     snake = Snake()
+    occupied_cells.update(snake.positions)
+    apple = Apple(occupied_cells)
+    occupied_cells.add(apple.position)
     fake_food = FakeFood(occupied_cells)
-    occupied_cells.append(fake_food.position)
+    occupied_cells.add(fake_food.position)
     stones = list()
     for _ in range(AMOUNT_OF_STONES):
         stones.append(Stone(occupied_cells))
-        occupied_cells.append(stones[-1].position)
+        occupied_cells.add(stones[-1].position)
     while True:
         clock.tick(SPEED)
         handle_keys(snake)
@@ -209,36 +237,32 @@ def main():
         # Проверка на совпадение координат головы с яблоком
         if head == apple.position:
             snake.add_last()
+            occupied_cells.remove(apple.position)
             apple.randomize_position(occupied_cells)
-            occupied_cells[1] = apple.position
+            occupied_cells.add(apple.position)
 
         # Проверка на совпадение координат головы с ложной едой
         elif head == fake_food.position:
             if len(snake.positions) == 1:
                 screen.fill(BOARD_BACKGROUND_COLOR)
-                snake.reset()
-                fake_food.randomize_position(occupied_cells)
-                occupied_cells[2] = fake_food.position
+                reset_game()
             else:
                 snake.decrease_length()
-                fake_food = FakeFood(occupied_cells)
-                occupied_cells[2] = fake_food.position
+            occupied_cells.remove(fake_food.position)
+            fake_food.randomize_position(occupied_cells)
+            occupied_cells.add(fake_food.position)
 
-        # Проверка на столкновение змеи самой с собой
-        if head in snake.positions[1:]:
+        # Проверка на столкновение змеи самой с собой или с камнем
+        if head in snake.positions[1:] or any(stone.position == head
+                                              for stone in stones):
             screen.fill(BOARD_BACKGROUND_COLOR)
-            snake.reset()
+            reset_game()
 
-        # Проверка на столкновение змеи с камнем
-        if any(stone.position == head for stone in stones):
-            screen.fill(BOARD_BACKGROUND_COLOR)
-            snake.reset()
-
-        apple.draw_cell()
-        fake_food.draw_cell()
+        apple.draw()
+        fake_food.draw()
         snake.draw()
         for i in range(AMOUNT_OF_STONES):
-            stones[i].draw_cell()
+            stones[i].draw()
         pg.display.update()
 
 
